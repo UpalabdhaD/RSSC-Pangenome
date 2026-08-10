@@ -1,0 +1,8 @@
+name: dnds_hyphy
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - hyphy=2.5.50
+  - python>=3.10
+  - biopython

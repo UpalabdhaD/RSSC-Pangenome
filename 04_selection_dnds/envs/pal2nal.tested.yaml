@@ -1,0 +1,13 @@
+name: test_pal2nal
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - _openmp_mutex=4.5
+  - libgcc=16.1.0
+  - libgcc-ng=16.1.0
+  - libgomp=16.1.0
+  - libxcrypt=4.4.38
+  - pal2nal=14.1
+  - perl=5.32.1
+  - perl-getopt-long=2.58

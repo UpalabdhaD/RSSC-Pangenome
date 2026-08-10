@@ -1,0 +1,91 @@
+---
+title: "Twilight_analysis"
+date: "2024-09-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+
+twilight_dir <- "<PROJECT_ROOT>/Results/TWILIGHT_ANALYSIS_IQTREE_FASTBAPS/"
+
+list.files(twilight_dir, recursive = F)
+```
+
+
+```{r}
+clf <- read_tsv(paste0(twilight_dir, "classification.tab"))
+genes_per_isolates <- read_tsv(paste0(twilight_dir, "genes_per_isolate.tab"))
+```
+
+
+```{r}
+genes_per_isolates %>% 
+  filter(! class %in% c("Absent in large lineages")) %>% 
+  ggplot(., aes(x = cluster, y = count, group = cluster)) +
+  geom_boxplot() +
+  theme_bw() +
+  facet_wrap(~ class, scales = "free") + 
+  xlab("Cluster of RSSC population") +
+  ylab("Gene family counts in class")
+
+
+
+```
+
+
+```{r}
+genes_per_isolates %>% 
+  filter(class == "Multi-lineage core") %>% 
+  group_by(class, cluster) %>%
+  summarise(median_class_count = median(count))
+
+
+genes_per_isolates %>% 
+  filter(class == "Lineage specific core")
+```
+Calculation of number of genes in each lineages for each twilight class
+```{r}
+
+# RSSC total "linege specific core genes"
+clf %>% 
+  filter(specific_class == "Lineage specific core")  %>% 
+  mutate(lineage = str_sub(details, 7,8)) %>% 
+  select(gene_name) %>%
+  distinct()
+  # group_by(specific_class, lineage) %>% 
+  # count()
+
+
+# genes_per_isolates %>% 
+#   filter(class == "Lineage specific core")
+  # group_by(class, cluster) %>%
+  # summarise(median_class_count = median(count))
+```
+
+
+```{r}
+
+genes_per_isolates %>% 
+  filter(class == "Multi-lineage core")
+```
+
+Stats for Twilight accessory genes
+```{r}
+clf %>% 
+  filter(specific_class == "Multi-lineage core")
+
+clf %>% 
+  filter(general_class == "Rare")
+```
+

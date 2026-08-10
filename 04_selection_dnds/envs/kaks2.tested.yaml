@@ -1,0 +1,10 @@
+name: test_kaks2
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - _openmp_mutex=4.5
+  - kakscalculator2=2.0.1
+  - libgcc=16.1.0
+  - libgomp=16.1.0
+  - libstdcxx=16.1.0

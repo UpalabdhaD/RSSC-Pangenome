@@ -1,0 +1,64 @@
+---
+title: "jacc_dist_isolates"
+date: "2024-09-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library}
+library(tidyverse)
+```
+
+```{r}
+
+metadata <- read_tsv("<PROJECT_ROOT>/Metadata/Full_RSSC_Metadata_142_species.tsv") %>%   
+  select(STRAIN, SEQTECH, "Host Order", PHYLOTYPE, "Host Family",
+         "Year isolated", Species) %>% 
+  column_to_rownames("STRAIN")
+
+
+
+
+dist_genome <- read_tsv("<PROJECT_ROOT>/Manuscript_Figures/Figure_2/Data/RSSC_jacc_dist.tsv",
+                        show_col_types = FALSE,
+                        col_names = c("g1", "g2", "jacc"))  
+
+
+isol_dist_acc_grapple <- 
+  read_tsv("<PROJECT_ROOT>/Results/Pangenome/RSSC_sensitive_accessory_distance_grapple/RSSC_sensitive_accessory_distance_grapple_isols_matrix.tsv")
+
+isol_dist_acc_grapple %>% 
+  column_to_rownames("genome") %>% 
+  pheatmap::pheatmap(.,
+                     filename = "<PROJECT_ROOT>/Manuscript_Figures/Supplementary_figs/Pheatmap_jacc_similarity_isolates_grapple.pdf",
+                     width = 20,
+                     height = 20,
+                     annotation_col = metadata,
+                     show_rownames = F,
+                     border_color = NA)
+  
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+

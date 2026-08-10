@@ -1,0 +1,246 @@
+---
+title: "Untitled"
+date: "2024-09-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(ggalluvial)
+library(highcharter)
+
+library(networkD3)
+```
+
+
+```{r}
+
+folder <- "<PROJECT_ROOT>/Manuscript_Figures/Figure_2/Data/"
+
+
+rssc.genome <- read_tsv(paste0(folder, 'rssc.genome.tsv'),col_names = "strains") %>% pull(strains)
+
+# tree file
+rssc_tree <- ggtree::read.tree(file = paste0(folder, 'ufbootstrap_rssc.treefile')) 
+  
+# fastANI clusters and take only rssc genomes 
+fastANI_clust <- read.csv(paste0(folder, 'test_member.csv'), header = F) %>% 
+  filter(V1 %in% rssc.genome)
+
+# fastbaps groups
+fastbaps_clust <- read.csv(paste0(folder, 'RSSC-sensitive.fastbapsClusters.csv'))
+
+# presence absence data
+pa_mat <- read_tsv(paste0(folder, 'gene_presence_absence.Rtab'))
+
+
+# twilight partition
+twilight <- read_tsv(paste0(folder, 'twilight_classification.tab'))
+
+
+fastbaps_clust <- read.csv(paste0(folder, 'RSSC-sensitive.fastbapsClusters.csv'))
+
+fastbaps_l3 <- fastbaps_clust %>% 
+  select(Isolates, Level.3) %>% 
+  rename("strain" = Isolates , cluster = Level.3) %>% 
+  # rownames_to_column(var = 'strain')  
+  mutate(cluster = as.factor(cluster))
+
+twilight <- twilight %>% 
+  select(gene_name, specific_class) %>%
+  rename("Gene" = "gene_name")
+
+annot <- pa_mat %>% 
+  pivot_longer(!Gene, names_to = "strain", values_to = "presence") %>% 
+  left_join(., twilight, "Gene") %>% 
+  # select(Gene, specific_class) %>% 
+  filter(specific_class %in% twilight_class_order) %>% 
+  select(Gene, specific_class) %>% 
+  distinct() %>% 
+  column_to_rownames("Gene")
+  # select(strain, Gene, presence)
+
+
+pa_with_twilight <- pa_mat %>% 
+  pivot_longer(!Gene, names_to = "strain", values_to = "presence") %>% 
+  left_join(., twilight, "Gene") %>% 
+  filter(specific_class %in% c("Multi-lineage intermediate", 
+                               "Lineage specific rare",
+                               "Multi-lineage rare"))
+
+
+pa_baps_tw <- pa_with_twilight %>% 
+  left_join(fastbaps_l3, by = "strain") 
+  # ggplot(., 
+  #        aes(axis1= cluster, axis2 = specific_class)) +
+  # scale_x_discrete(limits = c("cluster", "specific_class"),
+  #                  expand = c(0.2, 0.05)) +
+  # geom_alluvium(aes(fill = as.factor(presence)))
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+flights <- read_csv("~/Downloads/nycflights.csv")
+
+
+flights %>% 
+  mutate(origin = fct_rev(as.factor(origin)),
+         carrier = fct_rev(as.factor(carrier)),
+         dest = fct_rev(as.factor(dest))) %>% 
+  filter(n > 150)
+
+```
+
+
+```{r}
+nodes = data.frame("name" = 
+ c("Node A", # Node 0
+ "Node B", # Node 1
+ "Node C", # Node 2
+ "Node D"))# Node 3
+
+
+links = as.data.frame(matrix(c(
+ 0, 1, 10, # Each row represents a link. The first number
+ 0, 2, 20, # represents the node being conntected from. 
+ 1, 3, 30, # the second number represents the node connected to.
+ 2, 3, 40),# The third number is the value of the node
+ byrow = TRUE, ncol = 3))
+
+names(links) = c("source", "target", "value")
+
+
+
+
+```
+```{r}
+hc <- df_1000 %>% 
+  select(gene, cluster, presence,specific_class)   
+  mutate(cluster = paste0("cluster_", cluster),
+         presence = ifelse(presence == 1, "present", "absent"))
+
+hc$cluster <- as.factor(hc$cluster)
+hc$presence <- as.factor(hc$presence)
+hc$specific_class <- as.factor(hc$specific_class)
+
+
+sample_full <- pa_baps_tw
+# sample10K <- sample_n(pa_baps_tw, 100000) %>% 
+  # select(-strain) %>% 
+  # group_by(cluster, presence, specific_class) %>% 
+  select(cluster, presence, specific_class) %>% 
+  mutate(cluster = as.factor(paste("Cluster_", cluster)),
+         presence = as.factor(ifelse(presence == 1, "present", "absent")),
+         specific_class = as.factor(specific_class)
+         ) 
+
+
+
+sankey_plot <- hchart(data_to_sankey(sample_full), "sankey", name = "test")
+
+export_hc(sankey_plot, filename = paste0("<PROJECT_ROOT>/", "sankey_twilight.png"))
+```
+
+Use the network-D3
+```{r}
+
+links <- df_1000 %>% 
+  group_by(cluster, presence, specific_class) %>% 
+  summarise(count = n(), .groups = "drop") %>% 
+  mutate(source = paste("Cluster", cluster),
+         target = presence)
+
+
+
+
+
+nodes <- data.frame(name= unique(c(links$source, links$target)))
+
+
+links$source <- match(links$source, nodes$name) -1 
+
+links$target <- match(links$target, nodes$name) - 1
+
+links
+
+
+sankeyNetwork(Links = links,
+              Nodes = nodes,
+              Target = "target",
+              Value = "count",
+              NodeID = "name")
+```
+
+
+```{r}
+links %>% 
+  select(source, target, count, specific_class) 
+  ggplot(., 
+         aes(axis1 = source, 
+             axis2 = target,
+             y = count,
+             fill = specific_class)) +
+  geom_alluvium(aes(fill = specific_class)) +
+  geom_stratum() +
+  geom_text(stat = "stratum",
+    aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("Cluster", "Presence"))
+  
+  
+  
+```
+
+```{r}
+  
+  
+```
+
+
+```{r}
+sankeyNetwork(Links = links, 
+              Nodes = nodes,
+              Source = "source", 
+              Target = "target",
+              Value = "value", 
+              NodeID = "name",
+              fontSize= 12, 
+              nodeWidth = 30)
+```
+
+
+```{r}
+
+sample_n(pa_baps_tw, 10000) %>% 
+  select(-strain) %>% 
+  group_by(cluster, presence, specific_class) %>% 
+  summarise(gene_count = n(), .groups = "drop") 
+  ggplot(., 
+         aes(axis1 = cluster, 
+             axis2 = gene_count,
+             y = gene_count)) +
+  geom_alluvium(aes(fill = specific_class)) +
+  geom_stratum(aes(label = after_stat(stratum))) +
+  geom_text(stat = "stratum", 
+            aes(label = after_stat(stratum)))
+  # scale_x_discrete(limits = c())
+
+
+
+
+
+
+
+
+```
+

@@ -1,0 +1,10 @@
+name: test_snpsites
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - _openmp_mutex=4.5
+  - libgcc=16.1.0
+  - libgomp=16.1.0
+  - libzlib=1.3.2
+  - snp-sites=2.5.1

@@ -1,0 +1,11 @@
+--- padloc.R	2023-10-17 15:41:54.370270000 +1300
++++ padloc-patched.R	2023-12-11 13:51:14.430446766 +1300
+@@ -747,7 +747,7 @@
+   filter(type == "CDS") %>%
+   separate_attributes()
+ #if ("pseudo" %in% names(gff)) { gff <- gff %>% filter(is.na(pseudo)) }
+-if ("pseudo" %in% names(gff)) { gff <- gff %>% mutate(ID = ifelse(is.na(pseudo),ID,Name)) }
++# if ("pseudo" %in% names(gff)) { gff <- gff %>% mutate(ID = ifelse(is.na(pseudo),ID,Name)) }
+ if (!"protein_id" %in% names(gff)){gff <- gff %>% mutate(protein_id=ID)}
+ 
+ gff <- gff %>%

@@ -1,0 +1,529 @@
+---
+title: "RSSC_DNDS"
+date: "2025-04-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+
+
+```{r}
+
+prj_root = "<PROJECT_ROOT>/"
+
+
+
+# kaks of pangenome
+dnds_dir = "<PROJECT_ROOT>/Results/DNDS/"
+dnds_df = read_csv(paste0(dnds_dir, "RSSC_kaks2_df.csv"))
+
+# twilight pangenome
+twilight_classification <-
+  read_tsv("<PROJECT_ROOT>/Manuscript_Figures/Figure_2/Data/twilight_classification_updated.tab")
+
+# twilight_classification <- read_tsv(paste0(prj_root, "Results/", "TWILIGHT_ANALYSIS_IQTREE_FASTBAPS/", "classification.tab"))
+
+# gene ontology annotatio from eggNog mapper
+eggnog_result <- read_tsv(paste0(prj_root, "Results/Pangenome/PANAROO/RSSC-sensitive/PANGENOME_EGGNOG/RSSCsensitivePANAROO.emapper.annotations"),
+                          comment = "##")
+
+nglb_results <- read_tsv(paste0(prj_root, 'Results/Annotation/results/09_GO_annotation_table/pan_genome_reference/pan_genome_reference.GOannotation.tsv'), 
+                         col_names = F)
+
+
+
+gene2go <- nglb_results %>% 
+  separate_rows(., X2, sep = ",")
+
+colnames(gene2go) <- c("query", "GOs")
+
+```
+
+
+Proportion by selection pressure(purifying vs positive)
+```{r}
+dnds_df %>% 
+  mutate(status = ifelse(kaks > 1, 'positive', 'purifying')) %>% 
+  group_by(status) %>% 
+  summarise(n = n()/nrow(.)  * 100)
+
+```
+
+```{r}
+
+```
+
+
+Proportion in Pangenome
+```{r}
+
+dnds_df %>% 
+  mutate(gene = str_replace_all(gene, "___", "~~~")) %>%    
+  left_join(twilight_classification, by = c("gene"  = "gene_name"))   %>% 
+  dplyr::select(gene, kaks, general_class) %>% 
+  mutate(class = ifelse(grepl("Core", general_class), 'Core', 'Accessory')) %>% 
+  mutate(selection = ifelse(kaks > 1, 'positive', 'purifying')) %>% 
+  group_by(selection, class) %>% 
+  summarise(n = n()) %>% 
+  group_by(class) %>% 
+  mutate(total = sum(n),
+         prop = n/total * 100) %>% 
+  arrange(class, selection,prop)
+  
+  
+
+```
+
+```{r}
+
+dnds_df %>%
+  mutate(gene = str_replace_all(gene, "___", "~~~")) %>% 
+  left_join(twilight_classification, by = c("gene" = "gene_name")) %>%      
+  dplyr::select(gene, kaks, specific_class) %>% 
+  mutate(selection = ifelse(kaks > 1, 'positive', 'purifying')) %>% 
+  group_by(selection, specific_class) %>% 
+  summarise(n = n()) %>% 
+  group_by(specific_class) %>% 
+  mutate(total = sum(n),
+         prop = n/total * 100) %>%   
+  # filter(grepl("core", specific_class)) %>% 
+    pivot_wider(id_cols = specific_class, names_from = selection, values_from = prop)
+  
+```
+
+
+```{r}
+library(GO.db)
+
+# term2go <- as.character(gene2go$X2)
+
+go_names <-  AnnotationDbi::select(GO.db,
+                                   keys = as.character(gene2go$GOs),
+                                   columns = c("TERM"),
+                                   keytype = "GOID")
+
+
+
+# go_names <- AnnotationDbi::select(GO.db,
+#                                  keys = as.character(gene2go$GO_ID),  # Use correct column
+#                                  columns = "TERM",
+#                                  keytype = "GOID")   
+# 
+
+go_names_with_ontology <-  AnnotationDbi::select(GO.db, 
+                                                 keys = gene2go$GOs, 
+                                                 columns = c("TERM", "ONTOLOGY")) %>% 
+  dplyr::select(TERM, ONTOLOGY)
+
+
+
+# AnnotationDbi::columns(GO.db)
+
+
+
+term2name <- go_names[, c("GOID", "TERM")]
+colnames(term2name) <- c("term", "name")
+
+
+
+```
+
+
+
+## Computet the ORA from core, accessory and others
+```{r}
+
+library(clusterProfiler)
+
+
+core_enrichment <- twilight_classification %>% 
+  filter(general_class == "Core") %>%
+  pull(gene_name) %>%
+  clusterProfiler::enricher(
+    universe = twilight_classification$gene_name,
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+
+
+top50_core <-
+core_enrichment@result %>%
+filter(p.adjust < 0.05) %>%
+remove_rownames() %>%
+dplyr::select(ID, Description, geneID, p.adjust)  %>%
+  # left_join(go_names_with_ontology, by = c("ID" = "GOID"))
+# separate_longer_delim(geneID, delim = "/") %>%
+
+# left_join(dnds_df, by = c("geneID" = "gene")) %>%
+
+# pull(ONTOLOGY) %>%
+# unique()
+
+filter(Description != "NA") %>%
+dplyr::arrange(p.adjust) %>% 
+# distinct(Description)
+dplyr::top_n(50)
+
+core_enriched_dnds <- core_enrichment@result %>% 
+  filter(p.adjust < 0.05) %>% 
+  remove_rownames() %>% 
+  dplyr::select(ID, Description, geneID, p.adjust) %>% 
+  # separate_longer_delim(geneID, delim = "/") %>% 
+  # left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  left_join(go_names_with_ontology, 
+            by = c("Description" = "TERM")) %>% 
+  distinct() %>% 
+  filter(Description != "NA") %>% 
+  
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 10) %>% 
+  dplyr::arrange(p.adjust) %>% 
+  separate_longer_delim(geneID, delim = "/") %>% 
+  left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  filter(kaks != "NA") %>% 
+  group_by(Description) %>% 
+  # filter(kaks < 0.35) %>%
+  mutate(median_kaks = median(kaks)) %>% 
+ 
+  filter(!grepl("^GO:", Description)) %>%
+# group_by(Description) %>%
+  ggplot(., aes(x = kaks, y = reorder(Description, median_kaks), fill = ONTOLOGY)) +
+  geom_jitter(aes(color = ONTOLOGY), size = 0.8) + 
+  geom_violin(alpha = 0.5, width = 1.4, linewidth = 0.9) + 
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+  
+
+  theme_bw(base_size = 26) +
+  theme(legend.position = "top") +
+  # facet_wrap(~ ONTOLOGY, scales = "free") +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() + 
+  scale_x_continuous(limits = c(0, 1.5)) +
+  ylab("") +
+  xlab("ka/ks")
+  
+
+
+
+# core_enrichment %>%
+  # enrichplot::dotplot()
+
+
+
+
+core_enriched_dnds
+
+```
+Lineage specific rare
+```{r}
+
+
+lineage_specific_rare_enrichment <- twilight_classification %>% 
+  filter(specific_class == "Lineage specific rare") %>% 
+  pull(gene_name) %>%
+  clusterProfiler::enricher(
+    universe = twilight_classification$gene_name,
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+lineage_specific_rare_dnds <- lineage_specific_rare_enrichment@result %>% 
+  filter(p.adjust < 0.05) %>% 
+  remove_rownames() %>% 
+  dplyr::select(ID, Description, geneID, p.adjust) %>% 
+  # separate_longer_delim(geneID, delim = "/") %>% 
+  # left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  left_join(go_names_with_ontology, 
+            by = c("Description" = "TERM")) %>% 
+  distinct() %>% 
+  filter(Description != "NA") %>% 
+  
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 10) %>%
+  dplyr::arrange(p.adjust) %>% 
+  separate_longer_delim(geneID, delim = "/") %>% 
+  left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  filter(kaks != "NA") %>% 
+  group_by(Description) %>% 
+  # filter(kaks > 1) %>% 
+  mutate(median_kaks = median(kaks)) %>% 
+  # arrange(ONTOLOGY) %>% 
+  # filter(Description %in% top50_core$Description) %>%
+# group_by(Description) %>%
+  ggplot(., aes(x = kaks, y = reorder(Description, -median_kaks), fill = ONTOLOGY)) +
+  geom_jitter(aes(color = ONTOLOGY), size = 0.8) + 
+  geom_violin(alpha = 0.5,  linewidth = 0.9) + 
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26) +
+  # theme_bw(base_size = 20) +
+  theme(legend.position = "top") +
+  # facet_wrap(~ ONTOLOGY, scales = "free") +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() +
+  
+  # scale_x_continuous(limits = c(0, 4)) +
+  ylab("") +
+  xlab("ka/ks")
+
+# lineage_specific_rare_enrichment %>% 
+#   enrichplot::dotplot()
+
+lineage_specific_rare_dnds %>% 
+  ggsave(., 
+         filename = "<PROJECT_ROOT>/Manuscript_Figures/lineage_specific_rare_dnds.png",
+         width = 14, 
+         height = 7)
+
+```
+
+
+```{r}
+
+rare_enrichment <- twilight_classification %>% 
+  filter(general_class == "Rare") %>%
+  pull(gene_name) %>%
+  clusterProfiler::enricher(
+    universe = twilight_classification$gene_name,
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+
+
+# top50_core <- 
+  
+  # rare_enrichment@result %>% 
+  # filter(p.adjust < 0.05) %>% 
+  # remove_rownames() %>%  
+  # dplyr::select(ID, Description, geneID, p.adjust)  %>% 
+  #   # left_join(go_names_with_ontology, by = c("ID" = "GOID"))
+  # # separate_longer_delim(geneID, delim = "/") %>%
+  # 
+  # # left_join(dnds_df, by = c("geneID" = "gene")) %>%
+  #  
+  # # pull(ONTOLOGY) %>% 
+  # # unique()
+  # 
+  # filter(Description != "NA") %>%
+  # dplyr::arrange(p.adjust)
+  # # distinct(Description)
+  # dplyr::top_n(50)
+  # 
+
+rare_enrichment_dnds <- rare_enrichment@result %>% 
+  filter(p.adjust < 0.05) %>% 
+  remove_rownames() %>% 
+  dplyr::select(ID, Description, geneID, p.adjust) %>% 
+  # separate_longer_delim(geneID, delim = "/") %>% 
+  # left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  left_join(go_names_with_ontology, 
+            by = c("Description" = "TERM")) %>% 
+  distinct() %>% 
+  filter(Description != "NA") %>% 
+  
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 20) %>%
+  dplyr::arrange(p.adjust) %>% 
+  separate_longer_delim(geneID, delim = "/") %>% 
+  left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  filter(kaks != "NA") %>% 
+  group_by(Description) %>% 
+  # filter(kaks > 1) %>% 
+  mutate(median_kaks = median(kaks)) %>% 
+  # arrange(ONTOLOGY) %>% 
+  # filter(Description %in% top50_core$Description) %>%
+# group_by(Description) %>%
+  ggplot(., aes(x = kaks, y = reorder(Description, -median_kaks), fill = ONTOLOGY)) +
+  # geom_boxplot() +
+  # theme_bw() +
+  
+   geom_jitter(aes(color = ONTOLOGY), size = 0.8) + 
+  geom_violin(alpha = 0.5,  linewidth = 0.9) + 
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26) +
+  theme(legend.position = "top") +
+  # facet_wrap(~ ONTOLOGY, scales = "free") +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() +
+  
+  scale_x_continuous(limits = c(0, 4)) +
+  ylab("") +
+  xlab("ka/ks")
+
+
+
+# 
+# enriched_dnds <- ggpubr::ggarrange(plotlist = list(core_enriched_dnds,
+#                                                    rare_enrichment_dnds),
+#                   common.legend = T)
+
+  
+
+
+
+rare_enrichment_dnds
+  # ggsave(., filename = "<PROJECT_ROOT>/Manuscript_Figures/dnds_core_rare.png",
+         # width = 14, height = 7)
+```
+
+```{r}
+
+```
+
+
+Coinfinder co-incident 
+```{r}
+
+pairs <- read_tsv("<PROJECT_ROOT>/Results/Coincident_Coinfinder/Coincident_Coinfinder_pairs.tsv")
+
+
+# pairs %>% View()
+
+
+pair1 <- pairs$Source
+pair2 <- pairs$Target
+
+coincident_genes <- c(pair1, pair2)
+
+
+# number of unique gene families that are participating in network
+coincident_genes %>% 
+  unique() %>%
+  length()
+
+
+coincident_enrichment <-  coincident_genes %>% 
+  unique() %>% 
+  clusterProfiler::enricher(.,
+    universe = unique(twilight_classification$gene_name),
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+
+coincident_enrichment %>% 
+  enrichplot::dotplot()
+  
+
+coincident_kaks <- coincident_enrichment@result %>% 
+  
+  filter(p.adjust < 0.05) %>%
+  remove_rownames() %>% 
+  dplyr::select(ID, Description, geneID, p.adjust) %>%
+  # separate_longer_delim(geneID, delim = "/") %>% 
+  # left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  left_join(go_names_with_ontology, 
+            by = c("Description" = "TERM")) %>% 
+  distinct() %>% 
+  filter(Description != "NA") %>% 
+  
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 30) %>%
+  dplyr::arrange(p.adjust) %>% 
+  separate_longer_delim(geneID, delim = "/") %>% 
+  left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  filter(kaks != "NA") %>% 
+  group_by(Description) %>% 
+  # filter(kaks > 1) %>% 
+  mutate(median_kaks = median(kaks)) %>% 
+  # View()
+  
+  ggplot(., aes(x = kaks, y = reorder(Description, -median_kaks), fill = ONTOLOGY)) +
+  # geom_boxplot() +
+  # theme_bw(base_size = 20) +
+   geom_jitter(aes(color = ONTOLOGY), size = 0.8) + 
+  geom_violin(alpha = 0.5,  linewidth = 0.9) + 
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26) +
+  theme(legend.position = "top") +
+  # facet_wrap(~ ONTOLOGY, scales = "free") +
+  ggsci::scale_fill_d3() +
+   ggsci::scale_color_d3() +
+  scale_x_continuous(limits = c(0, 2.5)) +
+  ylab("") +
+  xlab("ka/ks")
+
+
+
+
+
+
+coincident_kaks %>% 
+  ggsave(., filename = "<PROJECT_ROOT>/Manuscript_Figures/coincident_enrichment_kaks.png",
+         width = 14, height = 7)
+
+# coincident_enrichment %>%
+  # enrichplot::dotplot()
+```
+
+
+```{r}
+ggpubr::ggarrange(plotlist = list(core_enriched_dnds, rare_enrichment_dnds,
+                                  lineage_specific_rare_dnds, coincident_kaks),
+                  nrow = 2, ncol = 2,
+                  align = "hv",
+                  common.legend = T,
+                  labels = c("(A)", "(B)", "(C)", "(D)")
+                  ) %>% 
+  
+  ggsave(., filename = "<PROJECT_ROOT>/Manuscript_Figures/GO_kaks_plot_final.pdf",
+         device = "pdf", width = 30, height = 25, dpi = 350)
+```
+
+
+```{r}
+coincident_enrichment@result %>% 
+  
+  filter(p.adjust < 0.05) %>%
+  remove_rownames() %>% 
+  dplyr::select(ID, Description, geneID, p.adjust) %>%
+  # separate_longer_delim(geneID, delim = "/") %>% 
+  # left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  left_join(go_names_with_ontology, 
+            by = c("Description" = "TERM")) %>% 
+  distinct() %>% 
+  filter(Description != "NA") %>% 
+  
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 30) %>%
+  dplyr::arrange(p.adjust) %>% 
+  separate_longer_delim(geneID, delim = "/") %>% 
+  left_join(dnds_df, by = c("geneID" = "gene")) %>% 
+  filter(kaks != "NA") %>% 
+  group_by(Description) %>% 
+  # filter(kaks > 1) %>% 
+  mutate(median_kaks = median(kaks)) %>% 
+  filter(kaks > 1)
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+

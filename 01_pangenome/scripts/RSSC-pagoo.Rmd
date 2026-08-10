@@ -1,0 +1,290 @@
+---
+title: "RSSC pangenome and population structure analysis"
+date: "2024-08-20"
+output: pdf_document
+toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+
+```{r library}
+suppressPackageStartupMessages({library(tidyverse)
+library(pagoo)
+library(RColorBrewer)
+library(ggsci)
+library(patchwork)
+library(gridExtra)
+library(egg)
+})
+
+
+```
+
+
+```{r dataset}
+rssc_sens_pacsv <- '<PROJECT_ROOT>/Results/Pangenome/PANAROO/RSSC-sensitive/gene_presence_absence.csv'
+
+pa_mat <- read_tsv('<PROJECT_ROOT>/Results/Pangenome/PANAROO/RSSC-sensitive/gene_presence_absence.Rtab') %>% 
+  column_to_rownames("Gene") %>% 
+  t() %>% 
+  as.matrix()
+
+meta <- read_csv("<PROJECT_ROOT>/Metadata/Rso_master_metadata.csv")
+
+# create the obj
+pagoo_rssc <- panaroo_2_pagoo(rssc_sens_pacsv)
+
+# filter the rssc groups
+meta <- meta %>% filter(STRAIN %in% pagoo_rssc$organisms$org)
+
+# pagoo_rssc$add_metadata(meta)
+
+
+#  meta
+meta_pagoo <- data.frame(org = pagoo_rssc$organisms$org, 
+                         host = meta$HOST,
+                         region = meta$REGION,
+                         seqtech = meta$SEQTECH,
+                         phylotype = meta$PHYLOTYPE, 
+                         sequevar = meta$SEQUEVAR)
+# supply the meta
+pagoo_rssc$add_metadata(map = "org", meta_pagoo)
+
+
+# check it
+# pagoo_rssc$organisms
+
+```
+
+
+## Group organisms based on their accessory genomes,can map aesthetics to metadata
+
+```{r pca}
+# prepare palette
+pca_cols_d3_c20 <- pal_d3(c("category20"), alpha = 0.8)(20)
+pca_cols_d3_c10 <- pal_d3(c("category10"), alpha = 0.8)(10)
+
+
+pca_phylotype <- pagoo_rssc$gg_pca(colour = 'phylotype') +
+  egg::theme_article() +
+  scale_color_manual(values = pca_cols_d3_c10) +
+   theme(legend.position = c(0.8, 1),
+        legend.justification = c("left", "top"))
+
+pca_seqtech <- pagoo_rssc$gg_pca(colour = 'seqtech') +
+  egg::theme_article() +
+  scale_color_manual(values = pal_d3(c("category20"), alpha = 0.8)(5)) +
+  theme(legend.position = c(0.8, 1),
+        legend.justification = c("left", "top"))
+
+pca_host <- pagoo_rssc$gg_pca(colour = 'host') +
+  egg::theme_article(base_size = 14) +
+  scale_color_manual(values = pca_cols_d3_c20) +
+   theme(legend.position = c(0.8, 1),
+        legend.justification = c("left", "top"))
+
+
+pca_host %>% class()
+  
+  
+pca_phylotype + pca_seqtech
+```
+
+## Jaccard similarity measures between genome based on the accesory gene abundance, can also use the method available in `vegan`, the default is bray-curtis. (0 value
+represents the closest genomes)
+
+```{r distance_genome}
+
+jacc_dist_acc <- pagoo_rssc$dist(method = "jaccard", binary = T) %>% 
+  as.matrix() %>%
+  pheatmap::pheatmap(main = "Pairwise similarity between genomes", 
+                     clustering_method = "complete",
+                     show_colnames = F,
+                     show_rownames = F,
+                    height = 15)
+                     # filename = "<PROJECT_ROOT>/Notebooks/RSSC-sens_acc_bray_dist.pdf",
+                     # height = 20, width = 20)
+```
+\newpage
+
+# Estimate pangenome size with micropan, according to the theory the pan-genome 
+is closed if the estimated `alpha` is above 1.0
+
+```{r , eval=F}
+library(micropan)
+# pa <- read_csv(rssc_sens_pacsv) %>% 
+  
+get_heaps <- function(path_rtab, iter=500){
+  
+  # read the data from path; column should be genes and rows are genomes
+  pa = readr::read_tsv(path_rtab, show_col_types = F) %>% 
+    column_to_rownames("Gene") %>% 
+    t() %>% 
+    as.matrix()
+  
+  # pass to micropan heap
+  if (iter < 500) {
+    print("Warning! No of iteration should be > 500. Will run it with n.perm=500")
+    # iter <- 500
+    
+    alphaa <- micropan::heaps(pa)
+    chao <- micropan::chao(pa)
+    
+    stats <- list(alpha = alphaa[[2]], chao = chao)
+  }else{
+    
+    alphaa <- micropan::heaps(pa, n.perm = iter)
+    chao <- micropan::chao(pa)
+    stats <- list(alpha = alphaa[[2]], chao = chao)
+  }
+  # second elem is alpha 
+  return(stats)
+}
+
+# calculate heaps; takes 5 mins
+heaps_est <- list(rssc = "<PROJECT_ROOT>/Results/Pangenome/PANAROO/RSSC-sensitive/gene_presence_absence.Rtab") %>%
+  map(.x = ., .f = ~ get_heaps(path_rtab = .))
+#      ralstonia = "<PROJECT_ROOT>/Results/Pangenome/PANAROO/Ralstonia_159_GenBank-sensitive/gene_presence_absence.Rtab") %>%
+#   map(.x, .f = ~ get_heaps(path_rtab = .))
+
+
+heap_est <- as.data.frame(list(param = c("alpha", "chao"),
+                   rssc = as.double(heaps_est$rssc))
+              )
+
+# write as a table
+heap_est %>% 
+  write_csv(., 
+            file = "<PROJECT_ROOT>/Notebooks/Heaps_estimation.csv")
+
+```
+
+
+## Rarefraction/Pangenome accumulation curve
+- Pagoo applies power-law distribution to fit the pangenome size and
+- exponential decay function for fitting the core genome size.
+
+```{r pangenome_accu}
+
+rarefrac <- pagoo_rssc$gg_curves(size = 2) +
+  # ggtitle("Pangenome accumulation/rarefraction curves") +
+  geom_point(alpha = 0.1, size = 2) +
+  theme_bw(base_size = 15) +
+  theme(legend.position = c(0.3, 0.4),
+        legend.justification = c("left", "top")) +
+  scale_color_aaas() +
+  annotate("text", 
+           label = paste0("alpha: ",
+                                  round(heaps_est$rssc$alpha, digits = 3)),
+           x = 25, y = 16000) +
+  
+  annotate("text",
+           label = paste0("chao: ", 
+                          round(heaps_est$rssc$chao, digits = 3)), 
+           x = 25, y = 15000)
+
+
+genome_vs_genes <- pagoo_rssc$gg_barplot() +
+  theme_bw(base_size = 15) +
+  ylab("")
+  
+
+
+# ggpubr::ggarrange(rarefrac, genome_vs_genes, ncol = 2)
+rarefrac + genome_vs_genes
+
+
+```
+
+```{r}
+
+
+
+```
+
+
+```{r}
+```
+
+```{r}
+
+panstripe.accumulation <- function(pa, nperm=100){
+  
+  if (!is.list(pa)){
+    pa <- list(pangenome=pa)
+  }
+  
+  plotdf <- purrr::imap_dfr(pa, ~{
+    .x <- t(.x)
+    purrr::map_dfr(1:nperm, function(i){
+      ppa <- .x[sample(nrow(.x), replace = FALSE), sample(ncol(.x), replace = FALSE)]
+      cumlative <- rowSums(apply(ppa, 1, cumsum)>0)
+      cumlative <- cumlative-cumlative[[1]]
+      df <- tibble::tibble(N = 1:length(cumlative),
+                           naccessory = cumlative,
+                           permutation = i)
+      return(df)
+    }) %>%
+      tibble::add_column(pangenome=.y)
+  })
+  
+  plotdf <- plotdf %>%
+    dplyr::group_by(.data$N,.data$pangenome) %>%
+    dplyr::summarise(
+      `accessory size` = mean(.data$naccessory),
+      `std` = stats::sd(.data$naccessory))
+  
+  
+  return(plotdf)
+}
+  
+  
+
+panstripe.accumulation(pa = as.matrix(rssc_sens_pa))
+
+```
+
+
+```{r}
+library(fastbaps)
+library(ape)
+
+sparse.data <- import_fasta_sparse_nt('<PROJECT_ROOT>/Results/Pangenome/PANAROO/RSSC-sensitive/core_gene_alignment.aln')
+
+sparse.data <- optimise_prior(sparse.data, type = "optimise.symmetric")
+baps.hc <- fast_baps(sparse.data)
+
+
+clusters <- best_baps_partition(sparse.data, as.phylo(baps.hc))
+
+clusters %>% 
+  as.data.frame() %>%
+  rownames_to_column("Strain") %>% 
+  rename("." = "baps_cluster") %>% 
+  # arrange(baps_cluster) %>% 
+  filter(baps_cluster == 4)
+```
+
+
+```{r}
+
+library(phytools)
+
+tree_rssc <- read.tree('<PROJECT_ROOT>/Results/Pangenome/PANAROO/RSSC-sensitive/tree_nt_gtr_gamma.tree')
+
+midpoint <- midpoint.root(tree_rssc)
+
+write.tree(midpoint, file = "<PROJECT_ROOT>/Results/Pangenome/PANAROO/RSSC-sensitive/midpoint_rooted_coregenome_fasttree_nt_gtr_gamma.tree")
+```
+
+
+```{r}
+
+
+
+
+```
+

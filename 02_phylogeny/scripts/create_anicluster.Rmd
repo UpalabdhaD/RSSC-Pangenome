@@ -1,0 +1,96 @@
+---
+title: "FastANI"
+date: "2024-08-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(igraph)
+```
+
+
+```{r}
+fastani <- read_tsv('<PROJECT_ROOT>/Results/ANI/Rso_Genbank_complete/work/fastani_matrix.tsv')
+
+metadata <- read_csv('<PROJECT_ROOT>/Results/Pangenome/FASTBAPS_CLUSTERS/RSSC-sensitive.fastbapsClusters.csv') %>% 
+  rename("Genome" = "Isolates")
+
+rssc.genome <- read_tsv('rssc.genome.tsv',col_names = "strains") %>% pull(strains)
+
+
+anicluster <- fastani %>% 
+  pivot_longer(!Genome, names_to = "Genome2", values_to = "ANI") %>% 
+  group_by(Genome) %>% 
+  filter(ANI>95) %>%
+  filter(Genome %in% pull(metadata, "Genome") & Genome2 %in% pull(metadata, "Genome")) %>% 
+  left_join(metadata) 
+  # pull(`Level 4`) %>% 
+  # unique()
+
+  # write_csv("../Metadata/rssc_95ANI_fastbaps.csv")
+
+```
+
+```{r}
+pwani <- fastani %>% 
+  pivot_longer(!Genome, names_to = "Genome2", values_to = "ANI") %>% 
+  filter(ANI > 95 & Genome != Genome2)
+
+
+
+dist_g <- pwani %>% 
+  igraph::graph_from_data_frame(., directed = F)
+
+
+comps <- igraph::components(dist_g)
+
+members <- comps$membership %>% 
+  as.data.frame() %>% 
+  rownames_to_column("genome1") %>% 
+  rename("cluster"= ".")
+
+members %>% 
+  pull(cluster) %>% 
+  unique()
+```
+
+
+```{r}
+
+anicluster <- read_csv("<PROJECT_ROOT>/Results/Network/ANIclusterNX/RSSC_ANI95_nx_components_network.csv")
+
+
+```
+
+
+```{r}
+library(igraph)
+library(ggraph)
+
+```
+
+
+```{r}
+
+anigraph <- graph_from_data_frame(anicluster, directed = F)
+
+E(anigraph)$weight <- anicluster$ANI
+
+anigraph
+
+
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+

@@ -1,0 +1,14 @@
+alignment_dir: Results/DNDS/PAL2NAL_DEDUP
+metadata: Metadata/Full_RSSC_142_Metadata.tsv
+species_tree: Results/UFbootstrap_iqtree/Midpoint_rooted/ufbootstrap_rssc_coresnpsites_midpointrooted.treefile
+outdir: MS_REVISION/DNDS_ALT_MODELS/results
+min_sequences: 4
+
+# Pilot set chosen from genes with existing numeric Ka/Ks values.
+# Set to [] to let Snakefile use every *.codon.dedup.fa alignment.
+genes:
+  - group_12061
+  - group_14503
+  - group_6484
+  - group_12379
+  - group_7736

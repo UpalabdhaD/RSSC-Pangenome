@@ -1,0 +1,11 @@
+name: hyphy_env
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - hyphy=2.5.50  # Ensure you get the latest stable version
+  - numpy
+  - pandas
+  - biopython
+  - seqkit

@@ -1,0 +1,152 @@
+---
+title: "DNDS"
+date: "2024-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Pipeliene:
+
+1. From panaroo pangenome analysis use roary like output that contain gene family to gene id mapping, to create 
+gene_family file for each corresponding gene ids in that family, output file would be named by panaroo family_id 
+and each gene_ids would be in each line. Will create 17k file for RSSC
+```{bash}
+
+cat gene_presence_absence_roary.csv | awk 'NR>1' | cut -d, -f 1 | while read family; 
+  do 
+  
+    echo "----$family------"; 
+    cat gene_presence_absence_roary.csv | grep -w "$family" | cut -d, -f 15- | sed 's/,/\n/g' >
+      gene_families/"$family.list"
+      
+  done
+
+```
+
+2. Concatenate all the BAKTA annotated proteins sequences from the whole set of strains/isolates 
+```{bash}
+
+cat "../../../../Metadata/RSSC_strains.tsv" | while read line; 
+  do 
+    echo $line; 
+    cat "../../../Annotation/Ralstonia-159-complete-BAKTA/${line}_BAKTA/${line}.faa" \
+    >> rssc_proteins/rssc_proteins.fa;
+  done
+
+```
+
+3. Use the `seqtk subseq` command to get proteins for each gene family using gene_family to gene_id mapping file and 
+the protein fasta file. 
+
+```{bash}
+
+# seqtk subseq rssc_proteins/rssc_proteins.fa gene_families/tsf.list | less -S
+for i in gene_families/*;
+  do 
+    filename=$(basename "$i" | sed 's/~/_/g');
+    seqtk subseq rssc_proteins/rssc_proteins.fa "$i" \
+      > "rssc_pan_genefam_proteins/$filename.fa";
+  done
+
+```
+
+
+4. Then align each fasta file corresponding to each gene families
+
+```{bash}
+# An alias for an accurate option (L-INS-i) for an alignment of up to ∼200 sequences × ∼2,000 sites
+# mafft-linsi {input} > {output}
+
+
+for i in rssc_pan_genefam_proteins/*.fa;
+  do 
+    outfile=$(basename "$i" | cut -d "." -f -2); 
+    mafft-linsi "$i" > "rssc_pan_genefam_alignments/${outfile}.aln"; 
+    echo "Alignment done for: $outfile";
+  done
+
+```
+
+5. Then run PAL2NAL for codon based alignments
+
+```{python}
+
+rule remove_duplicates:
+    input:
+        aln=os.path.join(config['RESULTS'], "DNDS", "PAL2NAL", "{genefamily}.codon.fa"),
+    output:
+        aln_unique=os.path.join(config['RESULTS'], "DNDS", "PAL2NAL_DEDUP", "{genefamily}.codon.dedup.fa"),
+    conda:
+        "../envs/hyphy.yaml",
+    shell:
+        """
+            seqkit rmdup -s {input.aln} -o {output.aln_unique}
+        """
+
+rule faToaxt:
+    input: 
+        os.path.join(config['RESULTS'], "DNDS", "PAL2NAL_DEDUP", "{genefamily}.codon.dedup.fa"),
+    output:
+        os.path.join(config['RESULTS'], "DNDS", "PAL2NAL_DEDUP_AXT", "{genefamily}.codon.dedup.axt"),
+    params:
+        prefix=os.path.join(config['RESULTS'], "DNDS", "PAL2NAL_DEDUP_AXT", "{genefamily}.codon.dedup"),
+    shell:
+        "perl scripts/parseFastaIntoAXT.pl {input} {params.prefix}"
+
+rule kaks2:
+    input:
+        os.path.join(config['RESULTS'], "DNDS", "PAL2NAL_DEDUP_AXT", "{genefamily}.codon.dedup.axt"),
+    output:
+        os.path.join(config['RESULTS'], "DNDS", "PAL2NAL_DEDUP_KAKS", "{genefamily}.kaks.tsv"),
+    params:
+        codon="11",
+        method="NG"
+    conda:
+        "../envs/kaks2.yaml",
+    shell:
+        """
+            KaKs_Calculator -i {input} -o {output} -c {params.codon} -m {params.method}
+        """
+```
+
+6. 
+```{r}
+
+tw_pa <- read_tsv("<PROJECT_ROOT>/Results/TWILIGHT_ANALYSIS_IQTREE_FASTBAPS/classification.tab")
+
+# tw_pa %>% 
+  
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+

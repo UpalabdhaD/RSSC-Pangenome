@@ -1,0 +1,10 @@
+name: test_mafft
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - _openmp_mutex=4.5
+  - libgcc=16.1.0
+  - libgcc-ng=16.1.0
+  - libgomp=16.1.0
+  - mafft=7.525  # corrected to match the source spec (protein_alignment.yaml) and the cached prot_aln Snakemake env from the original run; 7.505 was only what bioconda resolved when this file was tested
