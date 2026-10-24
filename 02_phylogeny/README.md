@@ -1,6 +1,6 @@
 # 02_phylogeny
 
-Corresponds to Methods §5.9, "Phylogenetic reconstruction and population structure
+Corresponds to STAR Methods > Method details, "Phylogenetic reconstruction and population structure
 analysis."
 
 ## What's here
@@ -21,7 +21,7 @@ analysis."
 - `scripts/midpoint_root.R`, `envs/ape_phytools.yaml` — midpoint-roots the IQ-TREE
   output for display (ape/phytools) ahead of the iTOL visualization shown in Figure 2.
 - `scripts/grapple/pw_similarity.py` — pairwise accessory-genome distance calculation
-  from the Grapple suite, feeding the igraph/ggraph clustering described in §5.9.
+  from the Grapple suite, feeding the igraph/ggraph clustering described in Methods.
 
 ## Not included
 

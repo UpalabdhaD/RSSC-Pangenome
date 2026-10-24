@@ -1,0 +1,431 @@
+---
+title: "Figure 4 redrawn with PAML M0 omega"
+date: "2026-10-14"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      dev = "ragg_png")   # CHANGED: measure text with the same font engine as the saved files
+FONT <- "Liberation Sans"   # CHANGED: Arial letter widths, and it includes the Greek letter omega
+```
+
+This notebook redraws Figure 4 with the steps of the original notebook
+(`../scripts/RSSC_dnds.Rmd`). It changes one input.
+The value per gene family is now the PAML codeml M0 omega (one-ratio model), from
+`../paml_m0_completion/paml_m0_complete.tsv` (all 9,624 families with
+at least two distinct sequences; families with paralogs use a FastTree gene tree). It replaces the KaKs_Calculator value from
+`Results/DNDS/RSSC_kaks2_df.csv`, which compared two halves of a joined sequence block instead of
+pairs of genes.
+
+The GO enrichment, the GO terms chosen for each panel, the plot layers, the colours and the panel
+order are unchanged. Comments marked `CHANGED` show every difference from the original.
+The notebook only reads files in the analysis project folder (`PROJECT_ROOT`).
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+
+prj_root = paste0(Sys.getenv("PROJECT_ROOT", "."), "/")   # set PROJECT_ROOT to the analysis project folder
+
+# CHANGED: PAML codeml M0 omega per gene family replaces the KaKs_Calculator values
+# (Results/DNDS/RSSC_kaks2_df.csv). The table covers all 9,624 families with at least two
+# distinct sequences: the original run, the completion run, and gene trees for families with
+# paralogs (../paml_m0_completion/merge_results.py writes it).
+paml_m0 <- read_tsv("../paml_m0_completion/paml_m0_complete.tsv",
+                    show_col_types = FALSE)
+
+# CHANGED: codeml returns omega = 999 when a family shows no synonymous change; omega is
+# undefined there, so those families are excluded.
+dnds_df <- paml_m0 %>%
+  filter(run_status %in% c("ok", "skipped_existing_ok"), !is.na(omega)) %>%
+  filter(omega < 999) %>%
+  dplyr::select(gene, omega, sequence_count)
+
+cat("PAML M0 families with an omega:", sum(!is.na(paml_m0$omega)),
+    "| excluded at the 999 boundary:", sum(paml_m0$omega >= 999, na.rm = TRUE),
+    "| used:", nrow(dnds_df), "\n")
+
+# twilight pangenome
+twilight_classification <-
+  read_tsv(paste0(prj_root, "Manuscript_Figures/Figure_2/Data/twilight_classification_updated.tab"),
+           show_col_types = FALSE)
+
+# CHANGED: the eggNOG annotation table is not read, because no step below uses it.
+
+nglb_results <- read_tsv(paste0(prj_root, 'Results/Annotation/results/09_GO_annotation_table/pan_genome_reference/pan_genome_reference.GOannotation.tsv'),
+                         col_names = F, show_col_types = FALSE)
+
+gene2go <- nglb_results %>%
+  separate_rows(., X2, sep = ",")
+
+colnames(gene2go) <- c("query", "GOs")
+
+```
+
+## Proportions and medians for the Results text
+
+Share of gene families with omega above 1.
+```{r}
+dnds_df %>%
+  mutate(status = ifelse(omega > 1, 'omega > 1', 'omega <= 1')) %>%
+  group_by(status) %>%
+  summarise(n = n()) %>%
+  mutate(percent = n / sum(n) * 100)
+```
+
+Core against accessory, as in the original notebook.
+```{r}
+dnds_df %>%
+  mutate(gene = str_replace_all(gene, "___", "~~~")) %>%
+  left_join(twilight_classification, by = c("gene"  = "gene_name")) %>%
+  dplyr::select(gene, omega, general_class) %>%
+  filter(!is.na(general_class)) %>%
+  mutate(class = ifelse(grepl("Core", general_class), 'Core', 'Accessory')) %>%
+  group_by(class) %>%
+  summarise(n = n(),
+            median_omega = median(omega),
+            percent_omega_above_1 = mean(omega > 1) * 100)
+```
+
+Each Twilight class.
+```{r}
+omega_by_class <- dnds_df %>%
+  mutate(gene = str_replace_all(gene, "___", "~~~")) %>%
+  left_join(twilight_classification, by = c("gene" = "gene_name")) %>%
+  filter(!is.na(specific_class)) %>%
+  group_by(specific_class) %>%
+  summarise(n = n(),
+            median_omega = median(omega),
+            q1 = quantile(omega, 0.25),
+            q3 = quantile(omega, 0.75),
+            percent_omega_above_1 = mean(omega > 1) * 100) %>%
+  arrange(median_omega)
+
+omega_by_class
+write_tsv(omega_by_class, "omega_by_twilight_class.tsv")
+```
+
+Kruskal-Wallis test across Twilight classes, and pairwise Wilcoxon tests against Collection core
+with Benjamini-Hochberg correction.
+```{r}
+class_df <- dnds_df %>%
+  mutate(gene = str_replace_all(gene, "___", "~~~")) %>%
+  left_join(twilight_classification, by = c("gene" = "gene_name")) %>%
+  filter(!is.na(specific_class))
+
+kruskal.test(omega ~ specific_class, data = class_df)
+
+pairwise_vs_core <- class_df %>%
+  filter(specific_class != "Collection core") %>%
+  group_by(specific_class) %>%
+  summarise(n = n(),
+            p = wilcox.test(omega, class_df$omega[class_df$specific_class == "Collection core"])$p.value,
+            .groups = "drop") %>%
+  mutate(p_bh = p.adjust(p, method = "BH"))
+
+pairwise_vs_core
+write_tsv(pairwise_vs_core, "omega_wilcoxon_vs_collection_core.tsv")
+```
+
+```{r}
+library(GO.db)
+
+go_names <-  AnnotationDbi::select(GO.db,
+                                   keys = as.character(gene2go$GOs),
+                                   columns = c("TERM"),
+                                   keytype = "GOID")
+
+go_names_with_ontology <-  AnnotationDbi::select(GO.db,
+                                                 keys = gene2go$GOs,
+                                                 columns = c("TERM", "ONTOLOGY")) %>%
+  dplyr::select(TERM, ONTOLOGY)
+
+term2name <- go_names[, c("GOID", "TERM")]
+colnames(term2name) <- c("term", "name")
+
+```
+
+## Panel A: Core
+
+```{r}
+
+library(clusterProfiler)
+
+core_enrichment <- twilight_classification %>%
+  filter(general_class == "Core") %>%
+  pull(gene_name) %>%
+  clusterProfiler::enricher(
+    universe = twilight_classification$gene_name,
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+core_enriched_dnds <- core_enrichment@result %>%
+  filter(p.adjust < 0.05) %>%
+  remove_rownames() %>%
+  dplyr::select(ID, Description, geneID, p.adjust) %>%
+  left_join(go_names_with_ontology,
+            by = c("Description" = "TERM")) %>%
+  distinct() %>%
+  filter(Description != "NA") %>%
+
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 10) %>%
+  dplyr::arrange(p.adjust) %>%
+  separate_longer_delim(geneID, delim = "/") %>%
+  left_join(dnds_df, by = c("geneID" = "gene")) %>%
+  filter(!is.na(omega)) %>%                               # CHANGED: omega instead of kaks
+  group_by(Description) %>%
+  mutate(median_omega = median(omega)) %>%                # CHANGED: omega instead of kaks
+
+  filter(!grepl("^GO:", Description)) %>%
+  ggplot(., aes(x = omega, y = reorder(Description, median_omega), fill = ONTOLOGY)) +
+  geom_jitter(aes(color = ONTOLOGY), size = 0.8) +
+  geom_violin(alpha = 0.5, width = 1.4, linewidth = 0.9) +
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26, base_family = FONT) +       # CHANGED: font family
+  theme(legend.position = "top") +
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5),     # CHANGED: legend title above the keys
+         colour = guide_legend(title.position = "top", title.hjust = 0.5)) +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() +
+  # CHANGED: no scale_x_continuous(limits = ...). Those limits removed data before the
+  # violins and boxes were computed; all values are now shown.
+  ylab("") +
+  # CHANGED: the same view (omega 0 to 1.5) in every panel. coord_cartesian only limits the view,
+  # so values above 1.5 still count in the violins and boxes.
+  coord_cartesian(xlim = c(0, 1.5)) +
+  xlab("ω (PAML M0)")                                # CHANGED: axis label
+
+core_enriched_dnds
+
+```
+
+## Panel C: Lineage-specific rare
+
+```{r}
+
+lineage_specific_rare_enrichment <- twilight_classification %>%
+  filter(specific_class == "Lineage specific rare") %>%
+  pull(gene_name) %>%
+  clusterProfiler::enricher(
+    universe = twilight_classification$gene_name,
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+lineage_specific_rare_dnds <- lineage_specific_rare_enrichment@result %>%
+  filter(p.adjust < 0.05) %>%
+  remove_rownames() %>%
+  dplyr::select(ID, Description, geneID, p.adjust) %>%
+  left_join(go_names_with_ontology,
+            by = c("Description" = "TERM")) %>%
+  distinct() %>%
+  filter(Description != "NA") %>%
+
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 10) %>%
+  dplyr::arrange(p.adjust) %>%
+  separate_longer_delim(geneID, delim = "/") %>%
+  left_join(dnds_df, by = c("geneID" = "gene")) %>%
+  filter(!is.na(omega)) %>%                               # CHANGED
+  group_by(Description) %>%
+  mutate(median_omega = median(omega)) %>%                # CHANGED
+  ggplot(., aes(x = omega, y = reorder(Description, -median_omega), fill = ONTOLOGY)) +
+  geom_jitter(aes(color = ONTOLOGY), size = 0.8) +
+  geom_violin(alpha = 0.5,  linewidth = 0.9) +
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26, base_family = FONT) +       # CHANGED: font family
+  theme(legend.position = "top") +
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5),     # CHANGED: legend title above the keys
+         colour = guide_legend(title.position = "top", title.hjust = 0.5)) +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() +
+  ylab("") +
+  # CHANGED: the same view (omega 0 to 1.5) in every panel. coord_cartesian only limits the view,
+  # so values above 1.5 still count in the violins and boxes.
+  coord_cartesian(xlim = c(0, 1.5)) +
+  xlab("ω (PAML M0)")                                # CHANGED
+
+lineage_specific_rare_dnds
+
+```
+
+## Panel B: Rare
+
+```{r}
+
+rare_enrichment <- twilight_classification %>%
+  filter(general_class == "Rare") %>%
+  pull(gene_name) %>%
+  clusterProfiler::enricher(
+    universe = twilight_classification$gene_name,
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+rare_enrichment_dnds <- rare_enrichment@result %>%
+  filter(p.adjust < 0.05) %>%
+  remove_rownames() %>%
+  dplyr::select(ID, Description, geneID, p.adjust) %>%
+  left_join(go_names_with_ontology,
+            by = c("Description" = "TERM")) %>%
+  distinct() %>%
+  filter(Description != "NA") %>%
+
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 20) %>%
+  dplyr::arrange(p.adjust) %>%
+  separate_longer_delim(geneID, delim = "/") %>%
+  left_join(dnds_df, by = c("geneID" = "gene")) %>%
+  filter(!is.na(omega)) %>%                               # CHANGED
+  group_by(Description) %>%
+  mutate(median_omega = median(omega)) %>%                # CHANGED
+  ggplot(., aes(x = omega, y = reorder(Description, -median_omega), fill = ONTOLOGY)) +
+  geom_jitter(aes(color = ONTOLOGY), size = 0.8) +
+  geom_violin(alpha = 0.5,  linewidth = 0.9) +
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26, base_family = FONT) +       # CHANGED: font family
+  theme(legend.position = "top") +
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5),     # CHANGED: legend title above the keys
+         colour = guide_legend(title.position = "top", title.hjust = 0.5)) +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() +
+  # CHANGED: no scale_x_continuous(limits = c(0, 4))
+  ylab("") +
+  # CHANGED: the same view (omega 0 to 1.5) in every panel. coord_cartesian only limits the view,
+  # so values above 1.5 still count in the violins and boxes.
+  coord_cartesian(xlim = c(0, 1.5)) +
+  xlab("ω (PAML M0)")                                # CHANGED
+
+rare_enrichment_dnds
+
+```
+
+## Panel D: Co-occurring gene families (Coinfinder)
+
+```{r}
+
+pairs <- read_tsv(paste0(prj_root, "Results/Coincident_Coinfinder/Coincident_Coinfinder_pairs.tsv"),
+                  show_col_types = FALSE)
+
+coincident_genes <- c(pairs$Source, pairs$Target)
+
+coincident_enrichment <-  coincident_genes %>%
+  unique() %>%
+  clusterProfiler::enricher(.,
+    universe = unique(twilight_classification$gene_name),
+    TERM2GENE = gene2go %>% dplyr::select("GOs", "query"),
+    TERM2NAME = term2name
+  )
+
+coincident_kaks <- coincident_enrichment@result %>%
+  filter(p.adjust < 0.05) %>%
+  remove_rownames() %>%
+  dplyr::select(ID, Description, geneID, p.adjust) %>%
+  left_join(go_names_with_ontology,
+            by = c("Description" = "TERM")) %>%
+  distinct() %>%
+  filter(Description != "NA") %>%
+
+  group_by(ONTOLOGY) %>%
+  slice_head(n = 30) %>%
+  dplyr::arrange(p.adjust) %>%
+  separate_longer_delim(geneID, delim = "/") %>%
+  left_join(dnds_df, by = c("geneID" = "gene")) %>%
+  filter(!is.na(omega)) %>%                               # CHANGED
+  group_by(Description) %>%
+  mutate(median_omega = median(omega)) %>%                # CHANGED
+  ggplot(., aes(x = omega, y = reorder(Description, -median_omega), fill = ONTOLOGY)) +
+  geom_jitter(aes(color = ONTOLOGY), size = 0.8) +
+  geom_violin(alpha = 0.5,  linewidth = 0.9) +
+  geom_boxplot(alpha = 0.3, width = 0.1, linewidth = 0.5, outliers = F) +
+
+  theme_bw(base_size = 26, base_family = FONT) +       # CHANGED: font family
+  theme(legend.position = "top") +
+  guides(fill = guide_legend(title.position = "top", title.hjust = 0.5),     # CHANGED: legend title above the keys
+         colour = guide_legend(title.position = "top", title.hjust = 0.5)) +
+  ggsci::scale_fill_d3() +
+  ggsci::scale_color_d3() +
+  # CHANGED: no scale_x_continuous(limits = c(0, 2.5))
+  ylab("") +
+  # CHANGED: the same view (omega 0 to 1.5) in every panel. coord_cartesian only limits the view,
+  # so values above 1.5 still count in the violins and boxes.
+  coord_cartesian(xlim = c(0, 1.5)) +
+  xlab("ω (PAML M0)")                                # CHANGED
+
+coincident_kaks
+
+```
+
+## Panel values, for the legend and the Results text
+
+```{r}
+panel_values <- function(p, panel) {
+  p$data %>%
+    ungroup() %>%
+    summarise(panel = panel,
+              go_terms = n_distinct(Description),
+              values = n(),
+              gene_families = n_distinct(geneID),
+              median_omega = median(omega),
+              max_omega = max(omega),
+              values_above_1 = sum(omega > 1),
+              values_above_1.5_outside_view = sum(omega > 1.5))
+}
+
+bind_rows(panel_values(core_enriched_dnds, "A Core"),
+          panel_values(rare_enrichment_dnds, "B Rare"),
+          panel_values(lineage_specific_rare_dnds, "C Lineage-specific rare"),
+          panel_values(coincident_kaks, "D Co-occurring")) %>%
+  write_tsv("panel_values.tsv") %>%
+  print()
+
+# Median omega for each GO term in each panel, for the per-function values in the Results text
+bind_rows(core_enriched_dnds$data %>% mutate(panel = "A Core"),
+          rare_enrichment_dnds$data %>% mutate(panel = "B Rare"),
+          lineage_specific_rare_dnds$data %>% mutate(panel = "C Lineage-specific rare"),
+          coincident_kaks$data %>% mutate(panel = "D Co-occurring")) %>%
+  ungroup() %>%
+  group_by(panel, ONTOLOGY, Description) %>%
+  summarise(gene_families = n(), median_omega = median(omega), values_above_1 = sum(omega > 1),
+            .groups = "drop") %>%
+  arrange(panel, desc(median_omega)) %>%
+  write_tsv("go_term_medians.tsv")
+```
+
+## Combined figure
+
+Same layout and size as the original `GO_kaks_plot_final.pdf` (30 x 25 in).
+```{r}
+# CHANGED: the combined figure is built while each output file is open, so text is measured
+# with the same font engine that draws it (avoids clipped labels and an overlapping legend).
+make_fig4 <- function() {
+  ggpubr::ggarrange(plotlist = list(core_enriched_dnds, rare_enrichment_dnds,
+                                    lineage_specific_rare_dnds, coincident_kaks),
+                    nrow = 2, ncol = 2,
+                    align = "none",                 # CHANGED: "hv" gave every panel the label width of the widest panel
+                    common.legend = T,
+                    labels = c("(A)", "(B)", "(C)", "(D)"),
+                    font.label = list(size = 40, family = FONT))   # CHANGED: panel letters readable at this size
+}
+
+ragg::agg_png("Figure4_PAML_M0.png", width = 30, height = 25, units = "in", res = 100,
+              background = "white")                                 # CHANGED: white background
+set.seed(2026)                                                      # CHANGED: reproducible jitter
+print(make_fig4())
+invisible(dev.off())
+
+cairo_pdf("Figure4_PAML_M0.pdf", width = 30, height = 25)          # CHANGED: embeds the font and prints omega
+set.seed(2026)
+print(make_fig4())
+invisible(dev.off())
+```

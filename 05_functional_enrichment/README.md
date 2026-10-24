@@ -1,6 +1,6 @@
 # 05_functional_enrichment
 
-Corresponds to Methods §5.12, "Functional annotation and enrichment analysis."
+Corresponds to STAR Methods > Method details, "Functional enrichment analysis."
 
 ## What's here
 
@@ -9,11 +9,12 @@ Corresponds to Methods §5.12, "Functional annotation and enrichment analysis."
   path `EGGNOG_RSSC_142/{genome}`), providing the COG category calls this stage's
   enrichment analysis is built on.
 
-## Where the enrichment analysis itself lives
+## Where the enrichment analyses live
 
-The over-representation analysis (ClusterProfiler's `enrichR`, comparing core,
-intermediate, and rare gene classes) is implemented inside
-`../04_selection_dnds/scripts/RSSC_dnds.Rmd`, not as a separate script — the
-manuscript's Figure 4 presents Ka/Ks and functional-category enrichment together, and
-the underlying notebook does too. This directory documents the annotation half of
-§5.12; the analysis half is cross-referenced from `04_selection_dnds`.
+- GO enrichment for Figure 4: `../04_selection_dnds/figure4_paml/Figure4_PAML_M0.Rmd`
+  (clusterProfiler `enricher`, Benjamini–Hochberg-adjusted P < 0.05). The original notebook,
+  `../04_selection_dnds/scripts/RSSC_dnds.Rmd`, ran the same GO enrichment for the first
+  submission.
+- COG over-representation across the pangenome classes (Figure 3F and Figure S5): not in this
+  repository. The notebook is `Manuscript_Figures/Figure_2/COG_enrichment.Rmd` in the
+  analysis project.

@@ -1,6 +1,6 @@
 # 01_pangenome
 
-Corresponds to Methods §5.8, "Pangenome construction and population-informed
+Corresponds to STAR Methods > Method details, "Pangenome construction and population-informed
 partitioning."
 
 ## What's here
@@ -11,7 +11,7 @@ partitioning."
 - `scripts/raname_gbk_assemblies.sh` — renames the downloaded assemblies by strain ID
   ahead of annotation and pangenome construction.
 - `subworkflows/panaroo.smk` — Panaroo pangenome construction (95% protein similarity
-  threshold, `--clean-mode sensitive`, MAFFT v7.505 for core-gene alignment).
+  threshold, `--clean-mode sensitive`, MAFFT v7.525 for core-gene alignment).
 - `subworkflows/postprocess_panaroo.smk` — pangenome accumulation curves and PCA via
   the Pagoo R package; alpha parameter via micropan.
 - `scripts/RSSC-pagoo.Rmd` — the Pagoo accumulation-curve/PCA notebook.
@@ -23,10 +23,14 @@ partitioning."
 - `scripts/twilight_stat_anslysis.Rmd`, `scripts/twilight_fastbaps_cluster_sankey.Rmd`,
   `scripts/backstrace_twilight.Rmd` — downstream twilight/FastBAPS analysis and
   reporting notebooks.
+- `genome_accessions/` (added for the revision) — `RSSC_142_strain_accessions.tsv` (strain and
+  GenBank assembly accession for the 142 genomes) and `make_supp_table6.py`, which builds
+  Table S6 from it.
 
 ## Not included
 
 Roary, PEPPAN, panX, PPanGGOLiN-as-pangenome-caller (PPanGGOLiN is used later for RGP
-detection, §5.10, not pangenome construction itself), PopPUNK, and the pangenome
+detection, under "Genomic plasticity regions, integration spots, and specialized gene
+systems", not pangenome construction itself), PopPUNK, and the pangenome
 graph tools (PGGB, Minigraph, PanGraph) — none of these are named as the pangenome
 method in the manuscript, which specifies Panaroo.
